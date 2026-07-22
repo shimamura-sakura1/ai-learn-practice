@@ -1,0 +1,104 @@
+﻿"""鐢?PyTorch 鍩虹绠楀瓙鎵嬪啓 Attention 鐨勭粌涔犻鏋躲€?""
+
+from __future__ import annotations
+
+import torch
+from torch import nn
+
+
+def scaled_dot_product_attention(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    causal: bool = False,
+    return_attention: bool = False,
+):
+    """鍗曞ご Attention銆?
+    q: [B, Sq, Dh]锛宬: [B, Sk, Dh]锛寁: [B, Sk, Dv]銆?    """
+    B, S, D = q.shape
+    s = q @ k.T / torch.sqrt(D) # [B, Sq, Sk]
+
+    s = torch.where(causal, s, -torch.float32("inf"))
+    v = torch.where(causal, v, -torch.float32("inf"))
+
+    row_max = torch.max(s, axis=0).unsqueeze(-1) # [B, 1]
+    softmax_s = torch.exp(row_max - s) / torch.sum(torch.exp(row_max - s), axis=0) # [B, S, S]
+    V = softmax_s @ v # [B, S, D_v]
+    return V
+
+
+def multi_head_attention_from_qkv(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    num_heads: int,
+    causal: bool = False,
+    return_attention: bool = False,
+):
+    """瀵瑰凡鎶曞奖鐨?Q/K/V 鎵ц澶氬ご Attention銆?
+    q銆乲銆乿 鐨勫垵濮?layout 鍧囦负 [B, S, D_model]銆?    """
+    B, S, D = q.shape
+    if D % num_heads != 0:
+        raise ValueError(f"got dim = {D} ,heads = {num_heads}")
+    D_h = D // num_heads
+    q_h = q.reshape(B, S, num_heads, D_h).permute(0,2,1,3)
+    k_h = k.reshape(B, S, num_heads, D_h).permute(0,2,1,3)
+    v_h = v.reshape(B, S, num_heads, D_h).permute(0,2,1,3)
+    s = q_h @ k_h.T / torch.sqrt(D_h) # [B, H, S, S]
+    causal = causal.unsqueese(1) # [B, 1, S]
+    s = torch.where(causal, s, -torch.float32('inf'))
+    v_h = torch.where(causal, v_h, -torch.float32('inf'))  
+    row_max = torch.max(s, axis=1).unsqueeze(-1) # [B, H, 1]
+    softmax_s = torch.exp(row_max - s) / torch.sum(torch.exp(row_max - s), axis=0) # [B, H, S, S]
+    V = softmax_s @ v_h # [B H S D_h]
+    V = V.permute(0,2,1,3).reshape(B, -1, D) # [B, S, D]
+    return V
+
+
+class HandWrittenMultiHeadSelfAttention(nn.Module):
+    """甯?Q/K/V 涓庤緭鍑烘姇褰辩殑鎵嬪啓澶氬ご鑷敞鎰忓姏妯″潡銆?""
+
+    def __init__(
+        self,
+        d_model: int,
+        num_heads: int,
+        bias: bool = True,
+        causal: bool = False,
+    ) -> None:
+        super().__init__()
+        if d_model <= 0 or num_heads <= 0:
+            raise ValueError("d_model 鍜?num_heads 蹇呴』涓烘鏁存暟")
+
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.causal = causal
+        self.q_proj = nn.Linear(d_model, d_model, bias=bias)
+        self.k_proj = nn.Linear(d_model, d_model, bias=bias)
+        self.v_proj = nn.Linear(d_model, d_model, bias=bias)
+        self.out_proj = nn.Linear(d_model, d_model, bias=bias)
+
+    def forward(self, x: torch.Tensor, return_attention: bool = False):
+        # TODO(stage 4): 妫€鏌ヨ緭鍏?shape锛屽苟瀹屾垚 Q/K/V projection銆?        # TODO(stage 4): 鏄惧紡瀹屾垚 head reshape銆乼ranspose 鍜屾牳蹇?Attention銆?        # TODO(stage 4): 鍚堝苟 heads锛屽簲鐢?out_proj锛屽苟鎸夐渶杩斿洖 attention_probs銆?        B, S, D = x.shape
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+        self.causal = torch.tril(torch.ones(S, S), diagonal=0).view(B, S, S)
+        if self.num_heads == 1:
+            out = scaled_dot_product_attention(
+                q=q,
+                k=k,
+                v=v,
+                causal=self.causal
+            )
+        else:
+            out = multi_head_attention_from_qkv(
+                q=q,
+                k=k,
+                v=v,
+                causal=self.causal
+            )
+        out = self.out_proj(out)
+        return out
+        raise NotImplementedError("璇峰畬鎴?HandWrittenMultiHeadSelfAttention.forward 鐨?TODO")
+
+

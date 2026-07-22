@@ -1,0 +1,24 @@
+﻿{
+    "editor.inlineSuggest.enabled":  false,
+    "editor.suggest.preview":  false,
+    "editor.quickSuggestions":  {
+                                    "other":  "on",
+                                    "comments":  "off",
+                                    "strings":  "off"
+                                },
+    "editor.suggestOnTriggerCharacters":  true,
+    "editor.wordBasedSuggestions":  "matchingDocuments",
+    "github.copilot.enable":  {
+                                  "*":  false,
+                                  "plaintext":  false,
+                                  "markdown":  false,
+                                  "scminput":  false
+                              },
+    "github.copilot.nextEditSuggestions.enabled":  false,
+    "editor.suggest.showFunctions":  true,
+    "editor.suggest.showMethods":  true,
+    "editor.suggest.showModules":  true,
+    "editor.suggest.showVariables":  true,
+    "python.analysis.autoImportCompletions":  true,
+    "python.analysis.typeCheckingMode":  "basic"
+}
