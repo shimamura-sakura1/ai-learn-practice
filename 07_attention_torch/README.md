@@ -54,6 +54,7 @@ out = probs V
 
 ```bash
 python -m pytest practice/07_attention_torch/test_attention.py -q -k single_head
+python -m pytest test_attention.py -q -k single_head
 ```
 
 继续执行：

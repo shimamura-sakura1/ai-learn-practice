@@ -19,16 +19,21 @@ def scaled_dot_product_attention(
     """
     B, S, D = q.shape
     s = q @ k.transpose(-2, -1) / torch.sqrt(torch.tensor(D, device=q.device))  # [B, Sq, Sk]
+    if causal:
+        mask = torch.tril(
+            torch.ones(s.shape[-2], s.shape[-1], device=q.device,dtype=torch.bool), diagonal=0
+        )
+        s = s.masked_fill(~mask, float('-inf'))
 
-    s = torch.where(causal, s, -torch.float32("inf"))
-    v = torch.where(causal, v, -torch.float32("inf"))
-
-    row_max = torch.max(s, axis=0).unsqueeze(-1)  # [B, 1]
-    softmax_s = torch.exp(row_max - s) / torch.sum(
-        torch.exp(row_max - s), axis=0
+    row_max = s.max(dim=-1, keepdim=True).values  # [B, S, 1]
+    softmax_s = torch.exp(s - row_max) / torch.sum(
+        torch.exp(s - row_max), dim=-1, keepdim=True
     )  # [B, S, S]
-    V = softmax_s @ v  # [B, S, D_v]
-    return V
+    out = softmax_s @ v  # [B, S, D_v]
+    if return_attention:
+        return out, softmax_s
+    return out
+
 
 
 def multi_head_attention_from_qkv(
@@ -51,12 +56,12 @@ def multi_head_attention_from_qkv(
     k_h = k.reshape(B, S, num_heads, D_h).permute(0, 2, 1, 3)
     v_h = v.reshape(B, S, num_heads, D_h).permute(0, 2, 1, 3)
     s = q_h @ k_h.transpose(-2, -1) / torch.sqrt(torch.tensor(D_h, device=q.device))  # [B, H, S, S]
-    causal = causal.unsqueese(1)  # [B, 1, S]
-    s = torch.where(causal, s, -torch.float32("inf"))
-    v_h = torch.where(causal, v_h, -torch.float32("inf"))
-    row_max = torch.max(s, axis=1).unsqueeze(-1)  # [B, H, 1]
-    softmax_s = torch.exp(row_max - s) / torch.sum(
-        torch.exp(row_max - s), axis=0
+    causal = causal.unsqueeze(1)  # [B, 1, S]
+    s = torch.where(causal, s, float("-inf"))
+    v_h = torch.where(causal, v_h, float("-inf"))
+    row_max = torch.max(s, axis=1) # [B, H, 1]
+    softmax_s = torch.exp(s - row_max) / torch.sum(
+        torch.exp(s - row_max), dim=-1
     )  # [B, H, S, S]
     V = softmax_s @ v_h  # [B, H, S, D_h]
     V = V.permute(0, 2, 1, 3).reshape(B, -1, D)  # [B, S, D]
@@ -93,13 +98,13 @@ class HandWrittenMultiHeadSelfAttention(nn.Module):
         q = self.q_proj(x)
         k = self.k_proj(x)
         v = self.v_proj(x)
-        self.causal = torch.tril(torch.ones(S, S), diagonal=0).view(B, S, S)
         if self.num_heads == 1:
             out = scaled_dot_product_attention(
                 q=q,
                 k=k,
                 v=v,
                 causal=self.causal,
+                return_attention=return_attention
             )
         else:
             out = multi_head_attention_from_qkv(
@@ -107,6 +112,7 @@ class HandWrittenMultiHeadSelfAttention(nn.Module):
                 k=k,
                 v=v,
                 causal=self.causal,
+                return_attention=return_attention
             )
         out = self.out_proj(out)
         return out
