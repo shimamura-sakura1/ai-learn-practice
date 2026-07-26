@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import torch
+import math
 from torch import nn
 
 
@@ -56,16 +57,18 @@ def multi_head_attention_from_qkv(
     k_h = k.reshape(B, S, num_heads, D_h).permute(0, 2, 1, 3)
     v_h = v.reshape(B, S, num_heads, D_h).permute(0, 2, 1, 3)
     s = q_h @ k_h.transpose(-2, -1) / torch.sqrt(torch.tensor(D_h, device=q.device))  # [B, H, S, S]
-    causal = causal.unsqueeze(1)  # [B, 1, S]
-    s = torch.where(causal, s, float("-inf"))
-    v_h = torch.where(causal, v_h, float("-inf"))
-    row_max = torch.max(s, axis=1) # [B, H, 1]
-    softmax_s = torch.exp(s - row_max) / torch.sum(
-        torch.exp(s - row_max), dim=-1
-    )  # [B, H, S, S]
-    V = softmax_s @ v_h  # [B, H, S, D_h]
-    V = V.permute(0, 2, 1, 3).reshape(B, -1, D)  # [B, S, D]
-    return V
+    if causal:
+        mask = torch.tril(
+            torch.ones(s.shape[-2], s.shape[-1], device=q.device, dtype=torch.bool),
+            diagonal=0
+        ) 
+        s = s.masked_fill(~mask, float('-inf'))
+    softmax_s = torch.softmax(s, dim=-1) # [B, H, S, S]
+    output = softmax_s @ v_h # B H S D_h
+    output = output.permute(0, 2, 1, 3).reshape(B, S, -1) # B, S, D
+    if return_attention:
+        return output, softmax_s
+    return output
 
 
 class HandWrittenMultiHeadSelfAttention(nn.Module):
@@ -111,9 +114,15 @@ class HandWrittenMultiHeadSelfAttention(nn.Module):
                 q=q,
                 k=k,
                 v=v,
+                num_heads=self.num_heads,
                 causal=self.causal,
                 return_attention=return_attention
             )
+        if return_attention:
+            out, attn = out[0], out[1]
+            out = self.out_proj(out)
+            return out, attn
+
         out = self.out_proj(out)
         return out
         raise NotImplementedError(
