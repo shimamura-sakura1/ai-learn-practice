@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 
 import torch
+from torch.profiler import ProfilerActivity, profile, record_function, tensorboard_trace_handler
 
 
 def _validate_qkv(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> None:
@@ -80,15 +81,18 @@ def attention(
     scale = 1.0 / math.sqrt(head_dim)
 
     # [B, H, Sq, D] @ [B, H, D, Sk] -> [B, H, Sq, Sk]
-    scores = torch.matmul(q, k.transpose(-2, -1)) * scale
+    with record_function("attention/qk_matmul"):
+        scores = torch.matmul(q, k.transpose(-2, -1)) * scale
 
     if causal:
         sq, sk = scores.shape[-2:]
         mask = _causal_mask(sq, sk, scores.device)  # [Sq, Sk]
         scores = scores.masked_fill(~mask, float("-inf"))
-
-    probs = torch.softmax(scores, dim=-1)  # [B, H, Sq, Sk]
-    output = torch.matmul(probs, v)  # [B, H, Sq, Dv]
+    with record_function("attention/softmax"):
+        probs = torch.softmax(scores, dim=-1)  # [B, H, Sq, Sk]
+    
+    with record_function("attention/pv_matmul"):
+        output = torch.matmul(probs, v)  # [B, H, Sq, Dv]
 
     if return_probs:
         return output, probs

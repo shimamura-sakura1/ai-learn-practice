@@ -1,0 +1,7 @@
+batch,heads,seq_len,head_dim,dtype,causal,peak_memory_mib,qkv_mib,scores_mib,probs_mib,scores_plus_probs_mib
+1,8,128,64,float16,False,9.125,0.375,0.25,0.25,0.5
+1,8,256,64,float16,False,11.125,0.75,1.0,1.0,2.0
+1,8,512,64,float16,False,18.125,1.5,4.0,4.0,8.0
+1,8,1024,64,float16,False,44.125,3.0,16.0,16.0,32.0
+1,8,2048,64,float16,False,144.125,6.0,64.0,64.0,128.0
+1,8,4096,64,float16,False,536.125,12.0,256.0,256.0,512.0

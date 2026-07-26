@@ -1,0 +1,3 @@
+[submodule "attention-kernel-lab/assignment2-systems"]
+	path = attention-kernel-lab/assignment2-systems
+	url = https://github.com/stanford-cs336/assignment2-systems.git
